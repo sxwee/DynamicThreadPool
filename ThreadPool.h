@@ -30,7 +30,7 @@ namespace dpool
         size_t idle_threads;    // 空闲线程数
         size_t max_threads;     // 最大线程数
 
-        mutable std::mutex m_mutex;                     // 互斥量
+        mutable std::mutex m_mutex;                     // 队列互斥量
         std::condition_variable condition;              // 条件变量
         std::queue<Task> m_tasks;                       // 任务队列
         std::queue<ThreadID> finished_thread_ids;       // 结束线程队列
@@ -49,6 +49,8 @@ namespace dpool
         auto submit(Func &&func, Ts &&...params) -> std::future<typename std::result_of<Func(Ts...)>::type>;
         // 获取当前的线程数
         size_t threadsNum() const;
+        // 创建新线程
+        void createNewThread();
     };
 
     ThreadPool::ThreadPool(size_t maxThreads) : stop(false), current_threads(0), idle_threads(0), max_threads(maxThreads)
@@ -161,11 +163,13 @@ namespace dpool
         // 若有空闲线程会唤醒线程来执行
         if (idle_threads > 0)
         {
+            std::cout << "notify one" << std::endl;
             condition.notify_one(); // 唤醒等待队列中的第一个线程
         }
         // 否则创建新线程
         else if (current_threads < max_threads)
         {
+            std::cout << "create new one" << std::endl;
             Thread t(&ThreadPool::worker, this);
             assert(id_thread.find(t.get_id()) == id_thread.end());
             id_thread[t.get_id()] = std::move(t);
@@ -180,6 +184,13 @@ namespace dpool
         return current_threads;
     }
 
+    void ThreadPool::createNewThread()
+    {
+        Thread t(&ThreadPool::worker, this);
+        assert(id_thread.find(t.get_id()) == id_thread.end());
+        id_thread[t.get_id()] = std::move(t);
+        ++current_threads;
+    }
 }
 
 #endif
