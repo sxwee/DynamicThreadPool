@@ -28,7 +28,7 @@ int main()
     for (int i = 0; i < n; i++)
         arr[i] = rand() % 10;
     int thread_nums = 10;
-    int task_nums = 6;
+    int task_nums = 5;
     ThreadPool pool(thread_nums);
     // 首先创建3个线程
     for (int i = 0; i < 3; i++)
