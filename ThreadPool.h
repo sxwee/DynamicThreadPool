@@ -27,7 +27,6 @@ namespace dpool
     private:
         bool stop;
         size_t current_threads; // 当前线程数
-        size_t idle_threads;    // 空闲线程数
         size_t max_threads;     // 最大线程数
 
         mutable std::mutex m_mutex;                     // 队列互斥量
@@ -37,6 +36,7 @@ namespace dpool
         std::unordered_map<ThreadID, Thread> id_thread; // 线程ID与线程的映射字典
         void worker();                                  // 线程执行函数
         void joinFinishedThreads();
+        void createNewThread(); // 创建新线程
 
     public:
         ~ThreadPool();
@@ -49,14 +49,12 @@ namespace dpool
         auto submit(Func &&func, Ts &&...params) -> std::future<typename std::result_of<Func(Ts...)>::type>;
         // 获取当前的线程数
         size_t threadsNum() const;
-        // 创建新线程
-        void createNewThread();
     };
 
-    ThreadPool::ThreadPool(size_t maxThreads) : stop(false), current_threads(0), idle_threads(0), max_threads(maxThreads)
+    ThreadPool::ThreadPool(size_t maxThreads) : stop(false), current_threads(0), max_threads(maxThreads)
     {
         // 线程池最大线程数等于0, 或超过系统支持的最大并发数
-        if (max_threads == 0 || max_threads > Thread::hardware_concurrency())
+        if (max_threads <= 0 || max_threads > Thread::hardware_concurrency())
         {
             max_threads = Thread::hardware_concurrency();
         }
@@ -79,12 +77,11 @@ namespace dpool
 
     void ThreadPool::worker()
     {
-        while (true)
+        while (true) // 不断轮询任务队列并取出任务执行
         {
             Task task;
             {
                 UniqueLock uniqueLock(m_mutex);
-                ++idle_threads;
                 /*
                     wait_for函数实际执行以下代码:
                         while(!Pred())
@@ -101,23 +98,12 @@ namespace dpool
                                        // stop被设置为true, 或队列不为空
                                        return stop || !m_tasks.empty();
                                    });
-                --idle_threads;
                 // 任务队列为空
-                if (m_tasks.empty())
+                if (m_tasks.empty() && stop)
                 {
-                    // stop标志为true, 直接返回
-                    if (stop)
-                    {
-                        --current_threads;
-                        return;
-                    }
-                    else // 线程池还未停止
-                    {
-                        --current_threads;
-                        joinFinishedThreads();
-                        finished_thread_ids.emplace(std::this_thread::get_id());
-                        return;
-                    }
+                    std::cout << "thread id " << std::this_thread::get_id() << " stopped" << std::endl;
+                    --current_threads;
+                    return;
                 }
                 // 获取队首任务
                 task = std::move(m_tasks.front()); // 转移语义
@@ -155,26 +141,21 @@ namespace dpool
         auto task = std::make_shared<PackagedTask>(std::move(execute));
         auto result = task->get_future();
 
-        MutexGuard guard(m_mutex);
-        assert(!stop);
-        // 添加任务队列
-        m_tasks.emplace([task]()
-                        { (*task)(); });
-        // 若有空闲线程会唤醒线程来执行
-        if (idle_threads > 0)
+        size_t tsize = 0;
         {
-            std::cout << "notify one" << std::endl;
-            condition.notify_one(); // 唤醒等待队列中的第一个线程
+            MutexGuard guard(m_mutex);
+            assert(!stop);
+            // 添加任务队列
+            m_tasks.emplace([task]()
+                            { (*task)(); });
+            tsize = m_tasks.size();
         }
-        // 否则创建新线程
-        else if (current_threads < max_threads)
+        std::cout << "cur task size: " << m_tasks.size() << std::endl;
+        if (current_threads == 0 || (tsize > 5 && current_threads < max_threads))
         {
-            std::cout << "create new one" << std::endl;
-            Thread t(&ThreadPool::worker, this);
-            assert(id_thread.find(t.get_id()) == id_thread.end());
-            id_thread[t.get_id()] = std::move(t);
-            ++current_threads;
+            createNewThread();
         }
+        condition.notify_one();
         return result;
     }
 

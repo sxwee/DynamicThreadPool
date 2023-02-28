@@ -23,18 +23,13 @@ int compute(int *arr, int start, int end)
 int main()
 {
     srand(time(NULL));
-    int n = 10000;
+    int n = 100000;
     int *arr = new int[n];
     for (int i = 0; i < n; i++)
         arr[i] = rand() % 10;
     int thread_nums = 10;
-    int task_nums = 5;
+    int task_nums = 200;
     ThreadPool pool(thread_nums);
-    // 首先创建3个线程
-    for (int i = 0; i < 3; i++)
-    {
-        pool.createNewThread();
-    }
     // 提交任务
     int k = n / task_nums;
     int ans = 0;
