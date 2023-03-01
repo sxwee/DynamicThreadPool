@@ -14,6 +14,7 @@
 
 namespace dpool
 {
+#define MAX_THREAD_NUM 20
     using MutexGuard = std::lock_guard<std::mutex>; // 互斥量对应的RAII模板
     using UniqueLock = std::unique_lock<std::mutex>;
     using Thread = std::thread;
@@ -26,21 +27,20 @@ namespace dpool
     {
     private:
         bool stop;
-        size_t current_threads; // 当前线程数
-        size_t idle_threads;    // 空闲线程数
-        size_t max_threads;     // 最大线程数
+        size_t init_size;    // 初始线程池大小
+        size_t idle_threads; // 空闲线程数
+        size_t max_threads;  // 最大线程数
 
-        mutable std::mutex queue_mutex;                 // 队列互斥量
-        std::condition_variable condition;              // 条件变量
-        std::queue<Task> m_tasks;                       // 任务队列
-        std::queue<ThreadID> finished_thread_ids;       // 结束线程队列
-        std::unordered_map<ThreadID, Thread> id_thread; // 线程ID与线程的映射字典
-        void worker();                                  // 线程执行函数
-        void createNewThread();                         // 创建新线程
+        mutable std::mutex queue_mutex;    // 队列互斥量
+        std::condition_variable condition; // 条件变量
+        std::queue<Task> m_tasks;          // 任务队列
+        std::vector<Thread> thread_queue;  // 线程队列
+        void worker();                     // 线程执行函数
+        void addNewThread(size_t size);    // 创建新线程
 
     public:
         ~ThreadPool();
-        ThreadPool(size_t maxThreads);
+        ThreadPool(size_t mthreads, size_t init_num = 0);
         // 禁止拷贝操作
         ThreadPool(const ThreadPool &) = delete;
         ThreadPool &operator=(const ThreadPool &) = delete;
@@ -48,16 +48,20 @@ namespace dpool
         template <typename Func, typename... Ts>
         auto submit_future_task(Func &&func, Ts &&...params) -> std::future<typename std::result_of<Func(Ts...)>::type>;
         // 获取当前的线程数
-        size_t threadsNum() const;
+        size_t currThreadsNum() const;
+        // 获取空闲线程数
+        size_t idlThreadNums() const;
     };
 
-    ThreadPool::ThreadPool(size_t maxThreads) : stop(false), current_threads(0), idle_threads(0), max_threads(maxThreads)
+    ThreadPool::ThreadPool(size_t mthreads, size_t init_num) : stop(false), init_size(init_num), idle_threads(0), max_threads(mthreads)
     {
         // 线程池最大线程数等于0, 或超过系统支持的最大并发数
         if (max_threads <= 0 || max_threads > Thread::hardware_concurrency())
         {
             max_threads = Thread::hardware_concurrency();
         }
+        if (init_size)
+            addNewThread(init_size);
     }
 
     ThreadPool::~ThreadPool()
@@ -68,10 +72,10 @@ namespace dpool
         }
         condition.notify_all(); // 唤醒所有等待队列中阻塞的线程
         // 等待所有线程运行结束
-        for (auto &elem : id_thread)
+        for (auto &elem : thread_queue)
         {
-            assert(elem.second.joinable());
-            elem.second.join();
+            assert(elem.joinable());
+            elem.join();
         }
     }
 
@@ -91,7 +95,6 @@ namespace dpool
                     a.在未超时时, 若谓词为真直接返回true, 否则将阻塞
                     b.在超时时, 直接返回谓词表达式的值
                 */
-                ++idle_threads;
                 condition.wait_for(uniqueLock,
                                    std::chrono::seconds(WAIT_SECONDS),
                                    [this]()
@@ -104,7 +107,6 @@ namespace dpool
                 if (m_tasks.empty() && stop)
                 {
                     std::cout << "thread id " << std::this_thread::get_id() << " stopped" << std::endl;
-                    --current_threads;
                     return;
                 }
                 // 获取队首任务
@@ -113,6 +115,13 @@ namespace dpool
             }
             // 执行task
             task();
+            // 支持自动释放空闲线程,避免峰值过后大量空闲线程
+            if (idle_threads > 0 && thread_queue.size() > max_threads)
+                return;
+            {
+                UniqueLock uqlck(queue_mutex);
+                ++idle_threads;
+            }
         }
     }
 
@@ -135,29 +144,38 @@ namespace dpool
             m_tasks.emplace([task]()
                             { (*task)(); });
         }
-        if (idle_threads > 0)
+        // 当前没有空闲线程, 且当前线程数小于系统设置的最大线程数
+        if (idle_threads < 1 && thread_queue.size() < max_threads)
         {
-            condition.notify_one();
+            addNewThread(1);
         }
-        else if (current_threads < max_threads)
-        {
-            createNewThread();
-        }
+        condition.notify_one();
         return result;
     }
 
-    size_t ThreadPool::threadsNum() const
+    void ThreadPool::addNewThread(size_t size)
     {
-        MutexGuard guard(queue_mutex);
-        return current_threads;
+        for (; thread_queue.size() < max_threads && size > 0; --size)
+        {
+            Thread t(&ThreadPool::worker, this);
+            thread_queue.emplace_back(std::move(t));
+            {
+                UniqueLock uniqueLock(queue_mutex);
+                ++idle_threads;
+            }
+        }
     }
 
-    void ThreadPool::createNewThread()
+    size_t ThreadPool::currThreadsNum() const
     {
-        Thread t(&ThreadPool::worker, this);
-        assert(id_thread.find(t.get_id()) == id_thread.end());
-        id_thread[t.get_id()] = std::move(t);
-        ++current_threads;
+        MutexGuard guard(queue_mutex);
+        return thread_queue.size();
+    }
+
+    size_t ThreadPool::idlThreadNums() const
+    {
+        MutexGuard guard(queue_mutex);
+        return idle_threads;
     }
 }
 
