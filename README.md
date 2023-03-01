@@ -1,10 +1,8 @@
 # DynamicThreadPool （动态线程池）
 
-**简介**：本项目基于C++11实现了一个动态线程池。该动态线程池可以根据根据线程池内未完成的任务数去动态创建新线程，并在必要时回收空闲的线程。
+**简介**：本项目基于C++11实现了一个动态线程池。该线程池维护了一个线程队列和一个任务队列，每次取一个任务交付一个空闲线程执行。当无空闲线程时，自动创建新线程。另外，线程池支持自动释放多余的空闲线程。
 
-------
-
-**动态线程池框架**：倘若有新的任务仍待执行，首先会在线程池中查看有无空闲线程，若有直接将对应的任务分配给该线程，否则需要创建新的线程并给其分配相应的任务。若任务队列已经为空，则会自动回收部分线程。
+动态线程池的示意图如下所示：
 
 <img src="images/framework.png" alt="framework" style="zoom:60%;" />
 
@@ -27,23 +25,36 @@ make
 ./main
 ```
 
-**测试说明**：测试Demo中利用多线程来对数组求和，过程中首先创建了三个线程，然后后续的task直接唤醒线程池中的线程执行任务。
+**某次测试结果**：
 
 ```cpp
-notify one
-thread_id: 140608981009984 [0 , 1999]
-thread nums: 3
-notify one
-thread_id: 140608972617280 [2000 , 3999]
-thread nums: 3
-notify one
-thread_id: 140608972617280 [4000 , 5999]
-thread nums: 3
-notify one
-thread_id: 140608981009984 [6000 , 7999]
-thread nums: 3
-notify one
-thread_id: 140608972617280 [8000 , 9999]
-thread nums: 3
-Final sum: 44569 , Answer: 44569
+task create new thread
+1 is excuting!!!
+create new thread
+create new thread
+task 7 is excuting!!!
+task 3 is excuting!!!
+task 4 is excuting!!!
+task 5 is excuting!!!
+task 6 is excuting!!!
+task 2 is excuting!!!
+task 8 is excuting!!!
+task 14 is excuting!!!
+task 15 is excuting!!!
+task 16 is excuting!!!
+task 17 is excuting!!!
+task 18 is excuting!!!
+task 19 is excuting!!!
+task 20 is excuting!!!
+thread stopped
+task 11 is excuting!!!
+thread stopped
+task 12 is excuting!!!
+thread stopped
+task 13 is excuting!!!
+thread stopped
+task 9 is excuting!!!
+thread stopped
+task 10 is excuting!!!
+thread stopped
 ```
