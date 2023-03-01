@@ -45,8 +45,8 @@ namespace dpool
         ThreadPool(const ThreadPool &) = delete;
         ThreadPool &operator=(const ThreadPool &) = delete;
         // 任务提交, 调用方需要等待完成
-        template <typename Func, typename... Ts>
-        auto submit_future_task(Func &&func, Ts &&...params) -> std::future<typename std::result_of<Func(Ts...)>::type>;
+        template <typename Func, typename... Args>
+        auto submit_future_task(Func &&func, Args &&...args) -> std::future<decltype(func(args...))>;
         // 获取当前的线程数
         size_t currThreadsNum() const;
         // 获取空闲线程数
@@ -128,13 +128,13 @@ namespace dpool
         }
     }
 
-    template <typename Func, typename... Ts>
-    auto ThreadPool::submit_future_task(Func &&func, Ts &&...params) -> std::future<typename std::result_of<Func(Ts...)>::type>
+    template <typename Func, typename... Args>
+    auto ThreadPool::submit_future_task(Func &&func, Args &&...args) -> std::future<decltype(func(args...))>
     {
         // 将参数绑定到函数上，产生可调用对象
-        auto execute = std::bind(std::forward<Func>(func), std::forward<Ts>(params)...);
+        auto execute = std::bind(std::forward<Func>(func), std::forward<Args>(args)...);
         // 确定可调用类型的返回类型
-        using ReturnType = typename std::result_of<Func(Ts...)>::type;
+        using ReturnType = decltype(func(args...));
         using PackagedTask = std::packaged_task<ReturnType()>;
 
         auto task = std::make_shared<PackagedTask>(std::move(execute));
