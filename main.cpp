@@ -15,6 +15,12 @@ void compute(int task_id)
     std::this_thread::sleep_for(std::chrono::seconds(2));
 }
 
+void hello()
+{
+    std::lock_guard<std::mutex> clck(cout_mutex);
+    cout << "thread id: " << this_thread::get_id() << " say hello" << endl;
+}
+
 int main()
 {
     int max_nums = 10, init_nums = 5;
@@ -25,6 +31,7 @@ int main()
     for (int i = 1; i <= task_nums; ++i)
     {
         pool.submit_future_task(compute, i);
+        // pool.submit_future_task(hello); 无参任务
     }
     return 0;
 }
