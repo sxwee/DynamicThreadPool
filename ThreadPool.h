@@ -106,7 +106,7 @@ namespace dpool
                 // 任务队列为空
                 if (m_tasks.empty() && stop)
                 {
-                    std::cout << "thread id " << std::this_thread::get_id() << " stopped" << std::endl;
+                    std::cout << "thread stopped" << std::endl;
                     return;
                 }
                 // 获取队首任务
@@ -116,8 +116,11 @@ namespace dpool
             // 执行task
             task();
             // 支持自动释放空闲线程,避免峰值过后大量空闲线程
-            if (idle_threads > 0 && thread_queue.size() > max_threads)
+            if (idle_threads > 0 && thread_queue.size() > init_size)
+            {
+                std::cout << "release a idle thraed" << std::endl;
                 return;
+            }
             {
                 UniqueLock uqlck(queue_mutex);
                 ++idle_threads;
@@ -147,6 +150,7 @@ namespace dpool
         // 当前没有空闲线程, 且当前线程数小于系统设置的最大线程数
         if (idle_threads < 1 && thread_queue.size() < max_threads)
         {
+            std::cout << "create new thread" << std::endl;
             addNewThread(1);
         }
         condition.notify_one();

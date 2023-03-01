@@ -23,8 +23,8 @@ void hello()
 
 int main()
 {
-    int max_nums = 10, init_nums = 5;
-    int task_nums = 10;
+    int max_nums = 10, init_nums = 3;
+    int task_nums = 20;
     ThreadPool pool(max_nums, init_nums);
 
     /**************************future任务测试, 需等待返回值**************************/
